@@ -5,6 +5,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PostController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LikeController;
+use App\Http\Controllers\PublicProfileController;
 
 // Route de la page d'accueil (publique)
 Route::get('/', function () {
@@ -28,6 +29,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/users/{user}', function (\App\Models\User $user) {
         return view('profile.show', compact('user'));
     })->middleware('auth')->name('profile.show');
+
+
+Route::get('/users/{user}', [PublicProfileController::class, 'show'])
+->middleware('auth')
+->name('profile.show');
 
     // Fil d’actualité (affichage des posts)
     Route::get('/feed', [PostController::class, 'index'])->name('posts.index');

@@ -7,6 +7,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Services\GeminiService;
+use Illuminate\Support\Facades\Storage;
+use Intervention\Image\ImageManager;
+use Intervention\Image\Encoders\WebpEncoder;
 
 class PostController extends Controller
 {
@@ -51,7 +54,7 @@ class PostController extends Controller
     {
         $request->validate([
             'sport' => 'nullable|string|max:100',
-            'image' => 'required|image|max:2048',
+            'image' => 'required|image|max:5120', // Now allows up to 5MB
             'caption' => 'nullable|string|max:255',
             'hashtags' => 'nullable|string|max:255',
         ]);
@@ -91,15 +94,54 @@ EOT;
             'hashtags' => 'nullable|string|max:255',
             'sport' => 'nullable|string|max:100',
         ]);
-
+    
+        $originalPath = storage_path('app/public/' . $request->image_path);
+    
+        if (file_exists($originalPath)) {
+            $manager = new ImageManager(); // Intervention 3
+            $img = $manager->make($originalPath);
+    
+            // 🧠 Auto-rotate based on EXIF orientation (very important for mobile photos)
+            $img->orientate();
+    
+            // 🖼 Resize main image (limit width to 1080px for mobile optimization)
+            $img->resize(1080, null, function ($constraint) {
+                $constraint->aspectRatio();
+                $constraint->upsize();
+            });
+    
+            // 🌍 Save as WebP for smaller size
+            $compressedPath = 'posts/' . pathinfo($request->image_path, PATHINFO_FILENAME) . '.webp';
+            $img->encode(new WebpEncoder(75));
+            Storage::disk('public')->put($compressedPath, (string) $img);
+    
+            // 📷 Create a thumbnail (400px wide)
+            $thumbnailPath = 'posts/thumbnails/' . pathinfo($request->image_path, PATHINFO_FILENAME) . '_thumb.webp';
+            $thumbnail = $manager->make($originalPath)
+                ->orientate()
+                ->resize(400, null, function ($constraint) {
+                    $constraint->aspectRatio();
+                    $constraint->upsize();
+                })
+                ->encode(new WebpEncoder(70));
+            Storage::disk('public')->put($thumbnailPath, (string) $thumbnail);
+    
+            // 🧹 Cleanup temporary original file
+            Storage::disk('public')->delete($request->image_path);
+    
+            $finalImagePath = $compressedPath;
+        } else {
+            $finalImagePath = $request->image_path;
+        }
+    
         Post::create([
             'user_id' => Auth::id(),
             'caption' => $request->caption,
             'hashtags' => $request->hashtags,
             'sport' => $request->sport,
-            'image_path' => $request->image_path,
+            'image_path' => $finalImagePath,
         ]);
-
+    
         return redirect()->route('posts.index')->with('success', '📸 Publication validée et partagée avec succès !');
     }
 
